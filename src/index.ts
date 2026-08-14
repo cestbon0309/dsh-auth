@@ -300,11 +300,17 @@ export default class AuthGateway extends Service {
     for (const [name, value] of Object.entries(req.headers)) {
       if (value === undefined) continue
       const lower = name.toLowerCase()
-      if (lower === 'host') continue
+      // Host and Origin are rewritten to the loopback backend so its trust
+      // fence sees a coherent same-origin loopback request (an un-rewritten
+      // Origin would 403 because origin.host !== host.host).
+      if (lower === 'host' || lower === 'origin') continue
       if (HOP_BY_HOP.has(lower) || connectionTokens.has(lower)) continue
       headers[name] = value
     }
     headers.host = `${this.backendHost}:${this.backendPort}`
+    if (typeof req.headers.origin === 'string') {
+      headers.origin = `http://${this.backendHost}:${this.backendPort}`
+    }
 
     const proxyReq = httpRequest(
       {
@@ -355,16 +361,18 @@ export default class AuthGateway extends Service {
     const backend = connect(this.backendPort, this.backendHost)
     backend.on('error', () => socket.destroy())
     backend.once('connect', () => {
-      // Replay the upgrade as a transparent relay, rewriting only the Host so
-      // the backend trust fence sees loopback.
+      // Replay the upgrade as a transparent relay, rewriting Host and Origin to
+      // the loopback backend so its trust fence sees loopback.
       const lines: string[] = [`${req.method} ${req.url} HTTP/${req.httpVersion}`]
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         const headerName = req.rawHeaders[i]
         const headerValue = req.rawHeaders[i + 1]
-        if (headerName.toLowerCase() === 'host') continue
+        const lower = headerName.toLowerCase()
+        if (lower === 'host' || lower === 'origin') continue
         lines.push(`${headerName}: ${headerValue}`)
       }
       lines.push(`Host: ${this.backendHost}:${this.backendPort}`)
+      lines.push(`Origin: http://${this.backendHost}:${this.backendPort}`)
       lines.push('', '')
       backend.write(lines.join('\r\n'))
       if (head && head.length > 0) backend.write(head)
