@@ -183,10 +183,10 @@ export default class AuthGateway extends Service {
     this.backendPort = webServer.port
 
     // Patch the SPA shell so it works over plain HTTP from LAN clients, where
-    // `crypto.randomUUID` is unavailable (secure-context-only API).
-    const tapIndex = webServer.tapIndex
-    if (typeof tapIndex === 'function') {
-      this.ctx.effect(() => tapIndex(injectRandomUuidPolyfill), 'dsh-auth-gateway: crypto.randomUUID polyfill')
+    // `crypto.randomUUID` is unavailable (secure-context-only API). Call the
+    // method ON the service object — capturing it unbound loses `this`.
+    if (typeof webServer.tapIndex === 'function') {
+      this.ctx.effect(() => webServer.tapIndex!(injectRandomUuidPolyfill), 'dsh-auth-gateway: crypto.randomUUID polyfill')
     }
 
     const server = createServer((req, res) => this.handleRequest(req, res))
