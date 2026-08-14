@@ -108,6 +108,29 @@ function parseBasic(header: string | undefined): { user: string; pass: string } 
   }
 }
 
+/**
+ * Inline script polyfilling `crypto.randomUUID` for non-secure (plain-HTTP LAN)
+ * contexts. Browsers expose it only in secure contexts (HTTPS / localhost), so
+ * a plain-HTTP LAN visit otherwise breaks the client RPC/connection layer.
+ */
+const RANDOM_UUID_POLYFILL = `<script>/* dsh-auth-gateway: polyfill crypto.randomUUID for non-secure HTTP contexts */
+(function(){if(typeof crypto.randomUUID==="function")return;crypto.randomUUID=function(){var b=new Uint8Array(16);crypto.getRandomValues(b);b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;var h="";for(var i=0;i<16;i++)h+=b[i].toString(16).padStart(2,"0");return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);};})();</script>`
+
+/**
+ * Inject the polyfill as early as possible in the SPA shell so the client
+ * bundles (deferred module scripts) run after it.
+ */
+function injectRandomUuidPolyfill(html: string): string {
+  const head = /<head\b[^>]*>/i.exec(html)
+  if (head) {
+    const at = head.index + head[0].length
+    return html.slice(0, at) + RANDOM_UUID_POLYFILL + html.slice(at)
+  }
+  const body = /<body\b[^>]*>/i.exec(html)
+  if (body) return html.slice(0, body.index) + RANDOM_UUID_POLYFILL + html.slice(body.index)
+  return RANDOM_UUID_POLYFILL + html
+}
+
 export default class AuthGateway extends Service {
   /** The backend webserver must exist (and be listening) before we front it. */
   static readonly inject = ['webServer']
@@ -148,11 +171,23 @@ export default class AuthGateway extends Service {
     }
 
     this.backendHost = this.config.backendHost || '127.0.0.1'
-    const webServer = (this.ctx as Context & { webServer?: { port?: number } }).webServer
+    const webServer = (this.ctx as Context & {
+      webServer?: {
+        port?: number
+        tapIndex?: (transform: (html: string) => string) => () => void
+      }
+    }).webServer
     if (typeof webServer?.port !== 'number') {
       throw new Error('dsh-auth-gateway: webServer service has no listening port')
     }
     this.backendPort = webServer.port
+
+    // Patch the SPA shell so it works over plain HTTP from LAN clients, where
+    // `crypto.randomUUID` is unavailable (secure-context-only API).
+    const tapIndex = webServer.tapIndex
+    if (typeof tapIndex === 'function') {
+      this.ctx.effect(() => tapIndex(injectRandomUuidPolyfill), 'dsh-auth-gateway: crypto.randomUUID polyfill')
+    }
 
     const server = createServer((req, res) => this.handleRequest(req, res))
     server.on('upgrade', (req, socket, head) => this.handleUpgrade(req, socket as Socket, head))

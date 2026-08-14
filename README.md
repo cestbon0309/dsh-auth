@@ -57,7 +57,8 @@ curl -H 'Authorization: Bearer <token>' http://<机器IP>:3081/
 
 ## 说明
 
-仅 HTTP 层鉴权，无 TLS；跨公网请前置 nginx/Caddy 做 HTTPS。
+- 内置 `crypto.randomUUID` polyfill：走 `http://内网IP` 时（非安全上下文）会自动注入页面，保证 RPC/会话等功能可用。
+- 仅 HTTP 层鉴权，无 TLS；跨公网请前置 nginx/Caddy 做 HTTPS。
 
 ## 许可
 

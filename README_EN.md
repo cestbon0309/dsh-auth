@@ -57,7 +57,8 @@ curl -H 'Authorization: Bearer <token>' http://<host-ip>:3081/
 
 ## Note
 
-HTTP-layer auth only, no TLS; front with nginx/Caddy for HTTPS on public exposure.
+- Injects a `crypto.randomUUID` polyfill so the UI works over plain HTTP from LAN clients (non-secure context).
+- HTTP-layer auth only, no TLS; front with nginx/Caddy for HTTPS on public exposure.
 
 ## License
 
