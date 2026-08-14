@@ -35,6 +35,10 @@ export interface AuthGatewayConfig {
     token?: string
     /** Fallback tunnel token when `auth.token` is empty. */
     password?: string
+    /** Legacy (unused): kept so an old `auth.username` field still validates. */
+    username?: string
+    /** Legacy (unused): kept so an old `auth.realm` field still validates. */
+    realm?: string
   }
 }
 
@@ -47,7 +51,9 @@ export const Config = z.object({
   auth: z.object({
     token: z.string().default(''),
     password: z.string().default(''),
-  }).default({ token: '', password: '' }),
+    username: z.string().default(''),
+    realm: z.string().default('dsh'),
+  }).default({ token: '', password: '', username: '', realm: 'dsh' }),
 })
 
 /** Non-internal IPv4/IPv6 literals, for the startup URL line. */
