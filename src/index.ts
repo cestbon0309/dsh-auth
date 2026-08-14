@@ -46,6 +46,8 @@ export interface AuthGatewayConfig {
   ipv6Only?: boolean
   /** Run without any configured credentials (auth disabled) — insecure, opt-in. */
   allowWithoutAuth?: boolean
+  /** Pathnames served without auth (static, non-sensitive files browsers fetch credential-less). */
+  publicPaths?: string[]
   auth?: {
     /** Basic-auth username (empty disables basic auth). */
     username?: string
@@ -64,6 +66,7 @@ export const Config = z.object({
   backendHost: z.string().default('127.0.0.1'),
   ipv6Only: z.boolean().default(false),
   allowWithoutAuth: z.boolean().default(false),
+  publicPaths: z.array(z.string()).default(['/manifest.webmanifest', '/favicon.ico']),
   auth: z.object({
     username: z.string().default(''),
     password: z.string().default(''),
@@ -148,6 +151,7 @@ export default class AuthGateway extends Service {
   private realm = 'dsh'
   private basicEnabled = false
   private tokenEnabled = false
+  private publicPaths: string[] = ['/manifest.webmanifest', '/favicon.ico']
 
   constructor(ctx: Context, config: AuthGatewayConfig) {
     super(ctx, 'auth-gateway')
@@ -162,6 +166,7 @@ export default class AuthGateway extends Service {
     this.realm = (auth.realm || 'dsh').replace(/"/g, '')
     this.basicEnabled = this.username !== '' && this.password !== ''
     this.tokenEnabled = this.token !== ''
+    this.publicPaths = this.config.publicPaths ?? ['/manifest.webmanifest', '/favicon.ico']
 
     if (!this.basicEnabled && !this.tokenEnabled && !this.config.allowWithoutAuth) {
       throw new Error(
@@ -275,8 +280,19 @@ export default class AuthGateway extends Service {
     return parts.join(', ')
   }
 
+  /** Paths exempt from auth (browsers fetch manifest/favicon without credentials). */
+  private isPublicPath(req: IncomingMessage): boolean {
+    let pathname: string
+    try {
+      pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
+    } catch {
+      return false
+    }
+    return this.publicPaths.includes(pathname)
+  }
+
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
-    if (!this.authorized(req)) {
+    if (!this.isPublicPath(req) && !this.authorized(req)) {
       res.writeHead(401, {
         'content-type': 'text/plain; charset=utf-8',
         'www-authenticate': this.challenge(),
